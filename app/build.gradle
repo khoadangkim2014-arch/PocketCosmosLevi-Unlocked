@@ -168,4 +168,8 @@ dependencies {
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
     implementation libs.glide
+    
+    // Liquid Glass / Glass Morphism Library
+    implementation 'com.github.Deishelon:ComposeGlass:1.2.2'
+    implementation 'androidx.graphics:graphics-core:1.0.0-alpha03'
 }
