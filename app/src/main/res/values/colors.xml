@@ -25,6 +25,14 @@
     <color name="white">#FFFFFF</color>
     <color name="divider">#E0E0E0</color>
 
+    <!-- Liquid glass palette -->
+    <color name="glass_fill">#59FFFFFF</color>
+    <color name="glass_fill_strong">#8CFFFFFF</color>
+    <color name="glass_border">#66FFFFFF</color>
+    <color name="glass_highlight">#33FFFFFF</color>
+    <color name="glass_primary_fill">#661B5E20</color>
+    <color name="glass_primary_border">#801B5E20</color>
+
     <color name="scrim">#66000000</color>
 
     <color name="glow_green">#4AE0A0</color>
