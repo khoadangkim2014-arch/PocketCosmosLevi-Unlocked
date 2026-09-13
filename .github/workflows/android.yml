@@ -60,9 +60,9 @@ jobs:
           }
           JSON
 
-      # Setup Java kèm Cache cho Gradle
+      # Đã nâng cấp lên setup-java@v5 để hết bị warning deprecation
       - name: Setup Java JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: "21"
           distribution: temurin
@@ -99,7 +99,7 @@ jobs:
         run: echo "curseforge.api_key=${CF_API_KEY}" >> local.properties
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease --build-cache
+        run: ./gradlew assembleRelease --stacktrace
 
       - name: Download Android testkey
         run: |
@@ -112,7 +112,15 @@ jobs:
       - name: Sign APK with testkey
         run: |
           APK_IN=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
-          APK_OUT="LeviLauncher-${GITHUB_REF_NAME}-release.apk"
+          if [ -z "$APK_IN" ]; then
+            echo "Error: Release APK file not found!"
+            exit 1
+          fi
+          
+          # Fix fallback tên file khi trigger bằng workflow_dispatch (không có ref_name)
+          REF_NAME="${GITHUB_REF_NAME:-latest}"
+          APK_OUT="LeviLauncher-${REF_NAME}-release.apk"
+          
           apksigner sign \
             --key testkey.pk8 \
             --cert testkey.x509.pem \
@@ -129,7 +137,7 @@ jobs:
           if [ -f "scripts/render_release_notes.py" ] && [ -f "resources/launcher/changelog.json" ]; then
             python3 scripts/render_release_notes.py resources/launcher/changelog.json release-notes.md
           else
-            echo "Release version ${{ github.ref_name }}" > release-notes.md
+            echo "Release version ${GITHUB_REF_NAME:-latest}" > release-notes.md
           fi
 
       - name: Publish GitHub Release
