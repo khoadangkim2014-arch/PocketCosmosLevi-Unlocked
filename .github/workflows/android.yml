@@ -15,41 +15,6 @@ jobs:
           fetch-depth: 0
           submodules: "recursive"
 
-      - name: Prepare google-services.json
-        run: |
-          mkdir -p app
-          cat > app/google-services.json <<'JSON'
-          {
-            "project_info": {
-              "project_number": "000000000000",
-              "project_id": "ci-placeholder",
-              "storage_bucket": "ci-placeholder.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
-                  "android_client_info": {
-                    "package_name": "org.levimc.launcher"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "AIzaSyCIOnlyPlaceholderKey"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": []
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          JSON
-
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
@@ -84,7 +49,13 @@ jobs:
       - name: Inject API Keys
         env:
           CF_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
-        run: echo "curseforge.api_key=${CF_API_KEY}" >> local.properties
+        run: |
+          if [ -z "${CF_API_KEY}" ]; then
+            echo "Warning: CURSEFORGE_API_KEY not set"
+            touch local.properties
+          else
+            echo "curseforge.api_key=${CF_API_KEY}" >> local.properties
+          fi
 
       - name: Build Release APK
         run: ./gradlew assembleRelease
