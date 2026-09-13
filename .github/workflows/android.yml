@@ -60,11 +60,13 @@ jobs:
           }
           JSON
 
+      # Setup Java kèm Cache cho Gradle
       - name: Setup Java JDK
         uses: actions/setup-java@v4
         with:
           java-version: "21"
           distribution: temurin
+          cache: 'gradle'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -97,7 +99,7 @@ jobs:
         run: echo "curseforge.api_key=${CF_API_KEY}" >> local.properties
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease
+        run: ./gradlew assembleRelease --build-cache
 
       - name: Download Android testkey
         run: |
