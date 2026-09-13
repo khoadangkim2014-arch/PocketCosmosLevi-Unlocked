@@ -2,8 +2,13 @@ name: Android CI
 
 on:
   push:
+    branches:
+      - "**"
     tags:
-      - '*'
+      - v*
+  pull_request:
+    branches:
+      - "**"
   workflow_dispatch:
 
 permissions:
@@ -12,7 +17,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -21,52 +25,13 @@ jobs:
           submodules: "recursive"
 
       - name: Validate release content
-        run: |
-          if [ -f "scripts/validate_release_content.py" ]; then
-            python3 scripts/validate_release_content.py
-          fi
-
-      - name: Prepare google-services.json placeholder
-        run: |
-          mkdir -p app
-          cat > app/google-services.json <<'JSON'
-          {
-            "project_info": {
-              "project_number": "000000000000",
-              "project_id": "ci-placeholder",
-              "storage_bucket": "ci-placeholder.appspot.com"
-            },
-            "client": [
-              {
-                "client_info": {
-                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
-                  "android_client_info": {
-                    "package_name": "org.levimc.launcher"
-                  }
-                },
-                "oauth_client": [],
-                "api_key": [
-                  {
-                    "current_key": "AIzaSyCIOnlyPlaceholderKey"
-                  }
-                ],
-                "services": {
-                  "appinvite_service": {
-                    "other_platform_oauth_client": []
-                  }
-                }
-              }
-            ],
-            "configuration_version": "1"
-          }
-          JSON
+        run: python3 scripts/validate_release_content.py
 
       - name: Setup Java JDK
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v4
         with:
           java-version: "21"
           distribution: temurin
-          cache: 'gradle'
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
@@ -76,6 +41,9 @@ jobs:
 
       - name: Install Build Tools 35.0.0
         run: sdkmanager "build-tools;35.0.0"
+
+      - name: Verify installed SDK Packages
+        run: sdkmanager --list
 
       - name: Setup Xmake
         uses: xmake-io/github-action-setup-xmake@v1
@@ -98,62 +66,66 @@ jobs:
           CF_API_KEY: ${{ secrets.CURSEFORGE_API_KEY }}
         run: echo "curseforge.api_key=${CF_API_KEY}" >> local.properties
 
-      - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace --info
+      - name: Build Debug, Beta and Unsigned Release APKs
+        run: ./gradlew assembleDebug assembleBeta assembleRelease
 
-      - name: Download Android testkey
-        run: |
-          wget -q -O testkey.pk8 "https://raw.githubusercontent.com/aosp-mirror/platform_build/master/target/product/security/testkey.pk8"
-          wget -q -O testkey.x509.pem "https://raw.githubusercontent.com/aosp-mirror/platform_build/master/target/product/security/testkey.x509.pem"
-
-      - name: Install apksigner
-        run: sudo apt-get install -y apksigner
-
-      - name: Sign APK with testkey
-        run: |
-          APK_IN=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
-          if [ -z "$APK_IN" ]; then
-            echo "::error::No release APK found in app/build/outputs/apk/release!"
-            exit 1
-          fi
-          
-          TAG_NAME="${GITHUB_REF_NAME:-manual}"
-          APK_OUT="PocketCosmosLevi-${TAG_NAME}-release.apk"
-          
-          apksigner sign \
-            --key testkey.pk8 \
-            --cert testkey.x509.pem \
-            --v1-signing-enabled true \
-            --v2-signing-enabled true \
-            --v3-signing-enabled true \
-            --v4-signing-enabled true \
-            --out "$APK_OUT" \
-            "$APK_IN"
-          
-          echo "APK_OUT=$APK_OUT" >> $GITHUB_ENV
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload Debug APK
+        uses: actions/upload-artifact@v4.6.2
         with:
-          name: PocketCosmosLevi-Build
-          path: ${{ env.APK_OUT }}
+          name: PocketCosmosLevi-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
 
-      - name: Generate release notes
+      - name: Upload Unsigned Release APK
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: PocketCosmosLevi-release-unsigned-apk
+          path: app/build/outputs/apk/release/*-unsigned.apk
+
+      - name: Upload Beta APK
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: PocketCosmosLevi-beta-apk
+          path: app/build/outputs/apk/beta/*.apk
+
+      - name: Sign Release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: kevin-david/zipalign-sign-android-release@v2
+        id: sign_app
+        with:
+          releaseDirectory: app/build/outputs/apk/release
+          signingKeyBase64: ${{ secrets.SIGNING_KEY_STORE }}
+          alias: ${{ secrets.SIGNING_KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          keyPassword: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          zipAlign: true
+        env:
+          BUILD_TOOLS_VERSION: "35.0.0"
+
+      - name: Rename APK with tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |
-          if [ -f "scripts/render_release_notes.py" ] && [ -f "resources/launcher/changelog.json" ]; then
-            python3 scripts/render_release_notes.py resources/launcher/changelog.json release-notes.md
-          else
-            echo "Release version ${{ github.ref_name }}" > release-notes.md
-          fi
+          TAG=${GITHUB_REF_NAME}
+          SIGNED_APK="${{ steps.sign_app.outputs.signedReleaseFile }}"
+          APK_DST="PocketCosmosLevi-${TAG}-release.apk"
+          cp "$SIGNED_APK" "$APK_DST"
+          echo "Signed APK renamed to $APK_DST"
 
-      - name: Publish GitHub Release
+      - name: Upload Signed APK Artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: PocketCosmosLevi-${{ github.ref_name }}-release.apk
+          path: PocketCosmosLevi-${{ github.ref_name }}-release.apk
+
+      - name: Generate GitHub release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python3 scripts/render_release_notes.py resources/launcher/changelog.json release-notes.md
+
+      - name: Release APK to GitHub Releases
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: "PocketCosmosLevi Unlocked ${{ github.ref_name }}"
-          files: ${{ env.APK_OUT }}
+          files: PocketCosmosLevi-${{ github.ref_name }}-release.apk
           body_path: release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -162,7 +134,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-          APK_URL: "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.APK_OUT }}"
+          APK_URL: "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/PocketCosmosLevi-${{ github.ref_name }}-release.apk"
           TAG_NAME: ${{ github.ref_name }}
         run: |
           if [ -z "${DISCORD_WEBHOOK:-}" ]; then
