@@ -12,6 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -60,7 +61,6 @@ jobs:
           }
           JSON
 
-      # Đã nâng cấp lên setup-java@v5 để hết bị warning deprecation
       - name: Setup Java JDK
         uses: actions/setup-java@v5
         with:
@@ -99,7 +99,7 @@ jobs:
         run: echo "curseforge.api_key=${CF_API_KEY}" >> local.properties
 
       - name: Build Release APK
-        run: ./gradlew assembleRelease --stacktrace
+        run: ./gradlew assembleRelease --stacktrace --info
 
       - name: Download Android testkey
         run: |
@@ -113,13 +113,12 @@ jobs:
         run: |
           APK_IN=$(find app/build/outputs/apk/release -name "*.apk" | head -1)
           if [ -z "$APK_IN" ]; then
-            echo "Error: Release APK file not found!"
+            echo "::error::No release APK found in app/build/outputs/apk/release!"
             exit 1
           fi
           
-          # Fix fallback tên file khi trigger bằng workflow_dispatch (không có ref_name)
-          REF_NAME="${GITHUB_REF_NAME:-latest}"
-          APK_OUT="LeviLauncher-${REF_NAME}-release.apk"
+          TAG_NAME="${GITHUB_REF_NAME:-manual}"
+          APK_OUT="PocketCosmosLevi-${TAG_NAME}-release.apk"
           
           apksigner sign \
             --key testkey.pk8 \
@@ -130,27 +129,37 @@ jobs:
             --v4-signing-enabled true \
             --out "$APK_OUT" \
             "$APK_IN"
+          
           echo "APK_OUT=$APK_OUT" >> $GITHUB_ENV
 
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PocketCosmosLevi-Build
+          path: ${{ env.APK_OUT }}
+
       - name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           if [ -f "scripts/render_release_notes.py" ] && [ -f "resources/launcher/changelog.json" ]; then
             python3 scripts/render_release_notes.py resources/launcher/changelog.json release-notes.md
           else
-            echo "Release version ${GITHUB_REF_NAME:-latest}" > release-notes.md
+            echo "Release version ${{ github.ref_name }}" > release-notes.md
           fi
 
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "LeviLauncher Unlocked ${{ github.ref_name }}"
+          name: "PocketCosmosLevi Unlocked ${{ github.ref_name }}"
           files: ${{ env.APK_OUT }}
           body_path: release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Notify Discord
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
           APK_URL: "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/${{ env.APK_OUT }}"
@@ -161,8 +170,8 @@ jobs:
             exit 0
           fi
 
-          EMBED_TITLE="🚀 LeviLauncher Update!"
-          EMBED_DESC="A new version of **LeviLauncher** is ready."
+          EMBED_TITLE="🚀 PocketCosmosLevi Update!"
+          EMBED_DESC="A new version of **PocketCosmosLevi** is ready."
           EMBED_COLOR=5814783
           THUMB_URL='https://avatars.githubusercontent.com/u/240574984?s=200&v=4'
 
